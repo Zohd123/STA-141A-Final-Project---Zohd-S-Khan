@@ -1,0 +1,594 @@
+---
+title: "STA-141A Final Project"
+author: "Zohd Khan"
+date: "2023-06-12"
+output: html_document
+---
+
+
+**Loading Test Sets for Prediction Model**
+```{r}
+session612 <- list()
+
+for (i in 1:2) {
+  session612[[i]] <- readRDS(paste("C:/Users/Zohd/Desktop/STA-141A/test", i, '.rds', sep=''))
+  print(session612[[i]]$mouse_name)
+  print(session612[[i]]$date_exp)
+}
+
+```
+
+
+**Loading Data across 18 relevant sessions**
+```{r}
+session <- list()
+
+for (i in 1:18) {
+  session[[i]] <- readRDS(paste("C:/Users/Zohd/Desktop/STA-141A/Data/sessions/session", i, '.rds', sep=''))
+  print(session[[i]]$mouse_name)
+  print(session[[i]]$date_exp)
+}
+#sink("C:/Users/Zohd/Desktop/STA-141A/Data/sessions/session",append = TRUE, split = TRUE)
+
+```
+
+
+**Abstract** 
+
+We introduce the background of relevant data and explain the objective of our report. We explore our data, particularly by using plots to investigate how the data changes across sessions. We then integrate our data through k-means clustering and other techniques to ensure an effective prediction model in next part. We then build the prediction model using the glm() function to predict randomly chosen 100 randomly chosen trials from sessions 1 and 18 of our data. We conclude by discussing our findings from the report and discuss model’s effectiveness in predicting feedback types.  
+
+
+**Introduction**
+
+The brain, with its complex network of neurons, is the source of our cognitive abilities and behavior. Understanding how neural activity translates into behavior and cognition is a question of profound scientific interest. 
+
+This report aims to explore neural activity data of mice captured across 18 experimental sessions and develop a predictive model to forecast feedback types based on this data. The relevant dataset, which was obtained from a 2019 experiment from Steinmetz and company, contains recorded neural activities or 'spikes' of different neurons over many trials for 38 total sessions with 10 different mice. As touched on before, the report covers the first 18 sessions with data on only 4 mice and spike trains of neurons from the onset of the stimuli to 0.4 seconds post-onset being included. 
+
+
+**Exploratory Analysis**
+
+
+**(i) Description of data across sessions**
+
+The data covered in this report, obtained by the 2019 experiment by Steinmetz and company, is stored in  18 RDS files across 18 sessions with 8 variables in each session. Following is the information on each variable:
+
+1.contrast_left: Contrast of the  stimulus presented in the left screen, ranging from values {0,0.25,0.5,1}. This is stored in a matrix. 
+
+2.contrast_right: Contrast of the stimulus presented in the right screen, ranging from values {0,0.25,0.5,1}. This is stored in a matrix. 
+
+3.feedback_type: Represents the result of each trial, which is type of the feedback given. A 1 is issued for success and -1 is issued for failure. Success and failure is determined by whether the mouse makes the correct decision. This is stored in a matrix. 
+
+4.mouse_name: name of mouse. This is stored as a character string value. 
+
+5.date_exp: date of experiment. This is stored as a character string value. 
+
+6.brain_area: area of the brain where each neuron lives. This is stored in a character vector. 
+
+7.spks: numbers of spikes of neurons in the visual cortex in time bins defined in time. This is stored in a list containing many elements, with each element being a matrix corresponding to the number of spikes recorded for each trial.
+
+8.time:  centers of the time bins for spks. This is stored in a list with the same amount of elements as spks, although the elements in the list for time are numeric vectors representing the centers of the time bins.
+
+
+**(ii) Exploring neural activities across trials in all sessions**
+```{r}
+for (ssn in 1:length(session)) {
+
+# Initialize an empty vector to store the sums
+sum_spks <- numeric(length(session[[ssn]]$spks))
+
+# Compute and store the sum for each trial
+for (trial in 1:length(session[[ssn]]$spks)) {
+
+  # Compute the sum of spikes for this trial
+  sum_spks[trial] <- sum(session[[ssn]]$spks[[trial]])
+
+  #print(trial)
+
+}
+
+# Create a sequence of trials
+trials <- 1:length(sum_spks)
+
+# Create a plot
+plot(trials, sum_spks, type = 'b', main = "Sum of Spikes per Trial", 
+     xlab = "Trial Number", ylab = "Sum of Spikes")
+
+}
+
+# Create a new figure for the histogram
+
+
+  # Create a histogram - Use 'hist' function
+  hist(sum_spks, main = "Histogram of Sum of Spikes per Trial",
+       xlab = "Sum of Spikes", ylab = "Frequency")
+```  
+
+ 
+In order to explore neural activities across trials in all sessions, we plot the sums of spiking neurons across trials in all 18 sessions for a broad overview of neural activities. We also plot a histogram for to compare the sums for each session even the last graph. While observing the different plots, it may initially appear as if the patterns in the plots look similar. However, there are  some significant differences, with one example being the neural activities between session 8 and session 16. Despite having a similar number of trials ( ranging from 250 to 300), the sum of spiking neurons per trial ranges from around 1300 to 2800 in session 8 and 250 to 750 in session 16. The difference is clearly present in this comparison as well as others. One  other important note to be made is that the histogram, which shows the compares the sum of spikes across sessions, has a non-normal distribution. This makes the usage of the glm() function suitable when we build our prediction model later on.
+
+
+**(iii) Explore changes across trials**
+```{r}
+
+library(lattice)
+
+# Get the number of trials
+num_trials <- length(session[[1]]$spks)
+
+# Initialize lists to store results
+mean_spike_counts <- list()
+var_spike_counts <- list()
+total_spikes_per_trial <- numeric(num_trials)
+
+# Loop over trials
+for (i in 1:num_trials) {
+ 
+  # Get the spike matrix for the current trial
+  spks <- session[[1]]$spks[[i]]
+  
+  # Calculate the mean spike count for each neuron
+  mean_spike_count <- rowMeans(spks)
+  mean_spike_counts[[i]] <- mean_spike_count
+  
+  # Calculate the variance in spike count for each neuron
+  var_spike_count <- apply(spks, 1, var)
+  var_spike_counts[[i]] <- var_spike_count
+  
+  # Calculate the total number of spikes in this trial
+  total_spikes_per_trial[i] <- sum(spks)
+}
+
+# Convert lists to matrices for easier manipulation
+mean_spike_counts <- do.call(rbind, mean_spike_counts)
+var_spike_counts <- do.call(rbind, var_spike_counts)
+
+# Now you can plot these quantities to visualize how they change across trials.
+# For example, you can create a heatmap of the mean spike counts:
+heatmap(mean_spike_counts)
+
+# Calculate the average mean and variance of spike counts across neurons for each trial
+average_mean_spike_counts <- rowMeans(mean_spike_counts)
+average_var_spike_counts <- rowMeans(var_spike_counts)
+
+# Plot average mean spike count across trials
+plot(average_mean_spike_counts, type = "l", main = "Mean spike counts across trials", xlab = "Trial", ylab = "Mean spike count")
+
+# Plot average variance of spike count across trials
+plot(average_var_spike_counts, type = "l", main = "Variance of spike counts across trials", xlab = "Trial", ylab = "Variance of spike count")
+hist(total_spikes_per_trial, main = "Histogram of total spikes per trial", xlab = "Total spikes", ylab = "Frequency")
+```
+
+```{r}
+# Initialize lists to store results for all sessions
+all_mean_spike_counts <- list()
+all_var_spike_counts <- list()
+all_total_spikes_per_trial <- list()
+
+ 
+
+# Loop over sessions
+for (s in 1:3) {
+
+  # Get the number of trials for the current session
+  num_trials <- length(session[[s]]$spks)
+
+  # Initialize lists to store results for the current session
+  mean_spike_counts <- list()
+  var_spike_counts <- list()
+  total_spikes_per_trial <- numeric(num_trials)
+
+  # Loop over trials within the current session
+  for (i in 1:num_trials) {
+    # Get the spike matrix for the current trial
+    spks <- session[[s]]$spks[[i]]
+
+    # Calculate the mean spike count for each neuron
+    mean_spike_count <- rowMeans(spks)
+    mean_spike_counts[[i]] <- mean_spike_count
+
+    # Calculate the variance in spike count for each neuron
+    var_spike_count <- apply(spks, 1, var)
+    var_spike_counts[[i]] <- var_spike_count
+
+    # Calculate the total number of spikes in this trial
+    total_spikes_per_trial[i] <- sum(spks)
+  }
+
+  # Convert lists to matrices for easier manipulation
+  mean_spike_counts <- do.call(rbind, mean_spike_counts)
+  var_spike_counts <- do.call(rbind, var_spike_counts)
+
+  # Store the results for the current session in the main lists
+  all_mean_spike_counts[[s]] <- mean_spike_counts
+  all_var_spike_counts[[s]] <- var_spike_counts
+  all_total_spikes_per_trial[[s]] <- total_spikes_per_trial
+
+  # Now, let's plot for the current session
+#png(filename = paste0("session_", s, "_plots.png"), width = 800, height = 800)
+  par(mfrow = c(1, 1))
+
+ 
+
+  # Heatmap of mean spike counts
+  heatmap(mean_spike_counts, main = paste("Session", s, "- Heatmap of mean spike counts"))
+par(mfrow = c(1, 1))
+  # Average mean spike counts across trials
+  plot(rowMeans(mean_spike_counts), type = "l", main = paste("Session", s, "- Mean spike counts across trials"), xlab = "Trial", ylab = "Mean spike count")
+  par(mfrow = c(1, 1))
+  # Average variance of spike counts across trials
+  plot(rowMeans(var_spike_counts), type = "l", main = paste("Session", s, "- Variance of spike counts across trials"), xlab = "Trial", ylab = "Variance of spike count")
+  par(mfrow = c(1, 1))
+  # Histogram of total spikes per trial
+  hist(total_spikes_per_trial, main = paste("Session", s, "- Histogram of total spikes per trial"), xlab = "Total spikes", ylab = "Frequency")
+
+ 
+
+  dev.off()
+}
+```
+
+We explore changes across trials by plotting the mean spike counts across trials for the first 3 question. (The question explicitly only asks for across trials in the instructions, but we chose to do a few sessions for a slightly  broader view.) We can clearly see that across trials, mean spike counts change over time. Over the course of the few sessions examined, mean spike counts do change as well. Plotting too many graphs would be unnecassary as the point has already been made and additional output would make this document too long to read. 
+
+
+
+**(iv) Exploring homogeneity and heterogeneity across sessions and mice**
+```{r}
+# Step 1: Compute mean spike count for each trial in each session
+mean_spike_counts_per_trial <- lapply(session, function(s) {
+  sapply(s$spks, function(spks) {
+    mean(rowMeans(spks))
+  })
+})
+
+# Step 2: Compute mean and standard deviation of mean spike counts for each session
+mean_spike_counts_per_session <- sapply(mean_spike_counts_per_trial, mean)
+sd_spike_counts_per_session <- sapply(mean_spike_counts_per_trial, sd)
+
+# Step 3: Compute overall mean and standard deviation across all sessions
+overall_mean_spike_counts <- mean(mean_spike_counts_per_session)
+overall_sd_spike_counts <- sd(mean_spike_counts_per_session)
+
+print(overall_mean_spike_counts)
+print(overall_sd_spike_counts)
+
+# Step 4: Compute Coefficient of Variation (CV) for each session
+cv_per_session <- sd_spike_counts_per_session / mean_spike_counts_per_session
+print(cv_per_session)
+
+# Step 5: Compute overall Coefficient of Variation (CV)
+overall_cv <- overall_sd_spike_counts / overall_mean_spike_counts
+
+# Print the overall CV
+print(overall_cv)
+```
+To explore homogeneity and heterogeneity across sessions and mice, we choose to calculate the coefficient of variation (CV), which is the ratio of the standard deviation to the mean. The CV, in this context, is a measure of the variability in spike counts relative to the average spike count. We calculate both CV for each session as well as the overall CV. A lower CV suggests more homogeneity in spike counts across sessions due to lower variability. Given that for each session, as well as the overall CV, we have relatively lower values, we can conclude that there is more homogeneity across sessions and mice. 
+
+
+
+**Data integration**
+
+**(i) Extracting shared patterns across sessions**
+```{r}
+# Load required libraries
+library(cluster)
+
+# Calculate mean firing rate for each session
+mean_firing_rate <- lapply(session, function(s) {
+  sapply(s$spks, function(spks) {
+    mean(spks)
+  })
+})
+
+# Concatenate mean firing rate data from all sessions
+
+# Combine the individual matrices of mean firing rates into a single matrix
+all_spks <- do.call(cbind, mean_firing_rate)
+
+# Transpose the matrix (flipping the rows and columns), as kmeans expects samples (neurons) as rows
+all_spks <- t(all_spks)
+
+# Perform k-means clustering
+set.seed(200)  # for reproducibility
+clust <- kmeans(all_spks, centers = 4)  # change '5' to your desired number of clusters
+
+# Calculate mean activity pattern for each cluster
+mean_patterns <- tapply(1:nrow(all_spks), clust$cluster, function(indices) {
+  rowMeans(all_spks[indices, , drop = FALSE])
+})
+
+# Visualize mean patterns
+par(mfrow = c(2, 3))  # change to fit your number of clusters
+for (i in 1:length(mean_patterns)) {
+  plot(mean_patterns[[i]], type = 'l', main = paste('Cluster', i))
+}
+# Standard deviation of Cluster 2
+sd_cluster2 <- sd(c(0.03164665, 0.02833649, 0.02968839, 0.03208933, 0.02566012, 0.02646818, 0.02915533, 0.02752376))
+
+# Standard deviation of Cluster 4
+sd_cluster4 <- sd(c(0.03855913, 0.03563281, 0.04218341, 0.03986596, 0.04169928, 0.03700534))
+```
+
+Here, we use k-means clustering to parition data into clusters based on similarity.
+
+The cluster 1 plot exhibits a negative linear relationship as the pattern of mean firing rates decreases from 0.02115482 to 0.01668102. This indicates that the mean firing rate from various sessions is decreasing in this cluster. Also, because of the negative linear relationship, there is a decreasing correlation between the neurons in this cluster.
+
+The cluster 2 plot exhibits a fluctuating pattern, as shown by the values in the pasted output below. 
+ 
+
+The cluster 3 plot exhibits a positive linear relationship as the pattern of mean firing rates increases from 0.05588468 to 0.06157735. This indicates that the mean firing rate from various sessions is increasing in this cluster. Also, because of the positive linear relationship, there is a increasing correlation between the neurons in this cluster.
+
+The cluster 4 plot exhibits another fluctuating pattern for the mean firing rates, similar to that of the cluster 2 plot. However, cluster 4 has a slightly higher standard deviation than cluster 2 (0.002589671 > 0.002298289). 
+
+
+> mean_patterns[[1]]
+[1] 0.02115482 0.01668102
+> mean_patterns[[2]]
+[1] 0.03164665 0.02833649 0.02968839 0.03208933 0.02566012 0.02646818 0.02915533 0.02752376
+> mean_patterns[[3]]
+[1] 0.05588468 0.06157735
+> mean_patterns[[4]]
+[1] 0.03855913 0.03563281 0.04218341 0.03986596 0.04169928 0.03700534
+
+ 
+ 
+**(ii) Addressing the differences between sessions**
+```{r}
+# Calculate mean firing rate for each session
+mean_firing_rates <- sapply(session, function(s) {
+  mean_rate <- mean(unlist(sapply(s$spks, function(spks) { mean(spks) })))
+  return(mean_rate)
+})
+
+# Plot mean firing rate for each session
+plot(mean_firing_rates, type = "b", main = "Mean Firing Rate by Session", xlab = "Session", ylab = "Mean Firing Rate")
+```
+There are multiple ways to address the differences between sessions, with one way being to compare statistical differences specifically. The above code, which plots the changes in mean firing rate across the sessions, accomplishes this.
+
+Past completed parts, such as the coefficient of variation and the sum of spiking neurons across sessions, also already address the differences between sessions. 
+
+  
+
+**(iii) Enhancing the prediction performance**
+```{r}
+
+
+library(lme4)
+
+# Fit the model
+# Here, 'outcome' is your dependent variable, 'predictor' is an independent variable, 
+# and 'session' is your grouping variable (i.e., the variable that defines the groups across 
+# which you want to share information).
+# Convert your list of sessions into a data frame
+df <- do.call(rbind, lapply(seq_along(session), function(i) {
+  data.frame(
+    session = paste("Session", i),  # create session names
+    mean_rate = sapply(session[[i]]$spks, mean)
+  )
+}))
+
+# Now you can fit the model
+model <- lmer(mean_rate ~ 1 + (1|session), data = df)
+
+# Check the summary of the model
+summary(model)
+```
+
+To enhance the prediction performance, we use mixed-effects modeling to enable borrowing of information across sessions. This is an application of hierarchical modeling, where we share information across different levels of a hierarchy - in this case, the sessions. We treat the mean firing rate as the dependent variable and include a random intercept for each session, allowing for variability between sessions while also capturing their shared structure.
+
+In the previous steps, we evaluated the statistical differences across sessions using measures like the mean firing rate. Now, with hierarchical modeling, we are leveraging the similarities across sessions. By considering both these similarities and differences, we aim to build a more robust and accurate prediction model. 
+
+
+
+**Predictive Modeling**
+```{r}
+# mean firing rate
+mean_firing_rate <- lapply(session, function(s) {
+  sapply(s$spks, function(spks) {
+    mean(spks)
+  })
+})
+
+# convert numeric feedback to factor with levels "Positive" and "Negative"
+data <- data.frame(
+  mean_rate = unlist(mean_firing_rate),
+  feedback = factor(ifelse(unlist(sapply(session, function(s) s$feedback)) == 1, "Positive", "Negative")),
+  session_id = rep(1:length(session), sapply(session, function(s) length(s$spks)))  # assuming each 'spks' list has the same length
+)
+
+# prepare training data
+set.seed(200)
+all_indices <- 1:nrow(data)
+
+# randomly select 100 trials from Session 1 and Session 18 respectively
+test_indices_1 <- sample(which(data$session_id == 1), 100)
+test_indices_18 <- sample(which(data$session_id == 18), 100)
+test_indices <- c(test_indices_1, test_indices_18)
+
+train_indices <- all_indices[!all_indices %in% test_indices]
+
+train_data <- data[train_indices, ]
+
+# fit the model
+model <- glm(feedback ~ mean_rate, family = binomial, data = train_data)
+
+# prepare validation data
+valid_data_1 <- data[test_indices_1, ]
+valid_data_18 <- data[test_indices_18, ]
+
+# predict on validation data from Session 1
+pred_1 <- predict(model, newdata = valid_data_1, type = "response")
+pred_class_1 <- ifelse(pred_1 > 0.5, "Positive", "Negative")
+accuracy_1 <- sum(pred_class_1 == valid_data_1$feedback) / length(valid_data_1$feedback)
+
+# predict on validation data from Session 18
+pred_18 <- predict(model, newdata = valid_data_18, type = "response")
+pred_class_18 <- ifelse(pred_18 > 0.5, "Positive", "Negative")
+accuracy_18 <- sum(pred_class_18 == valid_data_18$feedback) / length(valid_data_18$feedback)
+
+# print the accuracies
+print(paste0("Accuracy for Session 1: ", accuracy_1))
+print(paste0("Accuracy for Session 18: ", accuracy_18))
+```
+
+In the above code chunk, we build a logistic prediction model using the glm() function to predict feedback types among mice.I first need to train my model to predict feedback types, so I use the data from all sessions to train the data and specifically train the data to distinguish between a positive feedback type of 1 or a negative feedback type of anything else. Here, I randomly select 100 trials from session 1 and session 18 as my testing data. I then fit the model with the mean_rate variable (related to mean firing rate) and use the glm function with family = "binomial to make my logistic prediction model. I finish the code by calculating the accuracies for the respective sessions.
+
+
+**Predictive performance on the test sets**
+```{r}
+# Model already trained, just feed the test data
+
+mean_firing_rate_612 <- lapply(session612, function(s) {
+  sapply(s$spks, function(spks) {
+    mean(spks)
+  })
+})
+
+
+# New test data convert numeric feedback to factor with levels "Positive" and "Negative"
+data612 <- data.frame(
+  mean_rate = unlist(mean_firing_rate_612),
+  feedback = factor(ifelse(unlist(sapply(session612, function(s) s$feedback)) == 1, "Positive", "Negative")),
+  session_id = rep(1:length(session612), sapply(session612, function(s) length(s$spks)))  # assuming each 'spks' list has the same length
+)
+
+test_indices_1 <- sample(which(data612$session_id == 1), 100)
+test_indices_18 <- sample(which(data612$session_id == 2), 100)
+test_indices <- c(test_indices_1, test_indices_18)
+
+# prepare validation data
+valid_data_1 <- data612[test_indices_1, ]
+valid_data_18 <- data612[test_indices_18, ]
+
+# predict on validation data from Session 1
+pred_1 <- predict(model, newdata = valid_data_1, type = "response")
+pred_class_1 <- ifelse(pred_1 > 0.5, "Positive", "Negative")
+accuracy_1 <- sum(pred_class_1 == valid_data_1$feedback) / length(valid_data_1$feedback)
+
+# predict on validation data from Session 18
+pred_18 <- predict(model, newdata = valid_data_18, type = "response")
+pred_class_18 <- ifelse(pred_18 > 0.5, "Positive", "Negative")
+accuracy_18 <- sum(pred_class_18 == valid_data_18$feedback) / length(valid_data_18$feedback)
+
+# print the accuracies
+print(paste0("Accuracy for Session 1 (New test data): ", accuracy_1))
+print(paste0("Accuracy for Session 18 (New test data): ", accuracy_18))
+```
+
+In the above code chunk, I conducted the test with the same prediction model, but I used the data specifically from the given test files stored under the "session612" variable. This code, in comparison to the original prediction code one code chunk above, is different in the data it is testing with, and also in the fact that it does not include the code for training the data. I already trained the model by using the data I had randomly sampled originally in "predictive modeling" section, and only used the given test sets  in this code to test the data. Everything else in the code was the same as previously. 
+
+
+
+**Discussion**
+
+
+Based on the results of our report, we conclude that our prediction model does a fairly good job of predicting the feedback types of the each trial in the respective sessions given our accuracy rates of 0.72 for session 1 and .73 for session 18 with the given test data. The accuracy rates  of .60 and .78 from my randomly sampled data also supports this conclusion. The  accuracies for the prediction with the given test sets may closer to each other because the given test data may be more representative of the general consistencies or patterns within the data that were extracted throughout my code, while the data I had originally sampled the first time I tested the model may have been a bit less representative. However, I still obtained accuracies in a reasonably high range of 60-80% for both sessions with both instances of testing the prediction model, which points to the consistency and effectiveness of the model. 
+
+We can attribute the success of our model to us having taken the appropriate steps throughout the project to ensure the predictive model would be effective in the end. 
+
+Tracing back to the start of the project, performing exploratory analysis by comparing the data across sessions made it clear that we should use the mean firing rates as the main variable for our predictive model and hence integrate our data using that variable. The computation of the overall coefficient of variation ( relatively low value of .32) was especially important as it proved of homogeneity in mean firing rates across trials, which indicated that the mean firing rates would be an appropriate variable to proceed with for the data integration step. 
+
+Integrating our data was helpful in building our predictive model because we combined data across sessions in a way where both similarities and differences were accounted for.  
+ 
+We specifically used k-means clustering to combine our data based on their similarities. By applying k-means clustering, neurons were grouped into clusters based on their firing rates. Given the similarity (homogenity) across sessions established from the exploratory analysis, we knew that neurons within the same cluster exhibit similar mean firing rates regardless of the session they belong to. To combine our data based on their differences, we plotted the changes in mean firing rates across sessions. 
+ 
+
+Given the nature of how we integrated the data, we could confidently move on with forming our prediction model because we knew we had combined the data in a way where all major aspects of the data across sessions where accounted for and hence the data was representative enough to have predictions made of off it.
+
+We were finally able to build an effective prediction model because we first knew we were using the appropriate variable in mean firing rate based on our previous steps. We then created our predictive model using the glm() function. We knew this function would be appropriate because it is more suitable for non-normal distributions. Based on the histogram shown in part ii) of our exploratory analysis among other evidence, our distribution was proven to be non-normal, and hence the glm() was appropriate. We also appropriately trained the model with the orignal sampled data before testing the model. The accuracies I obtained were similar for both the randomly sampled data as well as the given test data, which confirms that the model was accurate given that the accuracies themsleves were relatively high and consistent. 
+
+In context of real-world applications, this report was able to demonstrate how data science, which incorporates  both statistical methods as well programming, is capable of solving quite complex problems. In this specific problem, we were initially tasked with being building an accurate prediction model while being given a vast amount of challenging data. However, after applying a series of data science tactics to explore, integrate, and model our data, we now have a prediction model that be used to make real conclusions about how neural activity works. In essence, this report exhibits the primary purpose of data science as an interdisciplinary field: to extract as much meaningful information as possible out of a given set of data.
+
+
+
+
+**Acknowledgements**
+
+Throughout this report, chatGPT was utilized in order to understand different methods for answering the questions, and code was used from chatGPT for most of my questions as well.
+
+For the Abstract and Introduction sections specifcally, I was able to write or provide information on everything myself based on my knowledge gained from studying the experiment's details and also my knowledge of data structures in R. 
+
+For the Exploratory Analysis section, I utilized code from chatGPT to loop the data and make plots of the sum of spikes for each session. I then wrote the histogram code myself to give a summary of the data. For the other portions, I also consulted chatGPT, but needed to review the concepts and understand/verify the codes to analyze or describe what was occuring. 
+
+For the Data Integration section, although I used code from chatGPT, I was able to verify that everything was correct because I had used technniques we have already covered in class, such as k-means clustering. 
+
+For the predictive modeling section and the predictive modeling with test sets section, I incorporated code from chatGPT, but was able to verify everything was correct and understand the code well because the concepts applied were already covered in the class and practiced in homework 4. 
+
+Overall, I utilized chatGPT to write most of the code for this report, but I was able to understand the code both by typing it out and also by consulting previous assignments where similar topics were employed as well as reviewing the concepts from the class notes/lectures. 
+
+
+
+**Appendix**
+
+One trial of one session 
+```{r}
+spks <- session[[1]]$spks[[1]]  # extract the first (and only) 'spks' matrix
+
+ 
+
+# Compute the sum of spikes for each neuron
+neuron_spikes <- rowSums(spks)
+
+ 
+
+# Plot the sum of spikes for each neuron
+barplot(neuron_spikes, main = "Neuron firing counts", xlab = "Neuron", ylab = "Count of Spikes")
+
+ 
+
+# Compute the sum of spikes for each time point
+time_spikes <- colSums(spks)
+
+ 
+
+# Plot the sum of spikes at each time point
+plot(time_spikes, type = "l", main = "Spike counts over time", xlab = "Time point", ylab = "Count of Spikes")
+
+#Next Trial 
+
+spks1 <- session[[1]]$spks[[75]]  # extract the first (and only) 'spks' matrix
+
+ 
+
+# Compute the sum of spikes for each neuron
+neuron_spikes <- rowSums(spks)
+
+# Plot the sum of spikes for each neuron
+barplot(neuron_spikes, main = "Neuron firing counts", xlab = "Neuron", ylab = "Count of Spikes")
+
+# Compute the sum of spikes for each time point
+time_spikes <- colSums(spks)
+
+# Plot the sum of spikes at each time point
+plot(time_spikes, type = "l", main = "Spike counts over time", xlab = "Time point", ylab = "Count of Spikes")
+
+
+
+
+```
+
+
+
+
+
+```{r}
+# Compute and plot for each trial
+for (trial in 1:length(session)) {
+  # Extract 'spks' matrix for the trial
+  spks <- session[[trial]]$spks[[1]]  # adjust this line based on the actual structure of 'session'
+
+  # Compute the sum of spikes for each neuron
+  neuron_spikes <- rowSums(spks)
+
+  # Compute the sum of spikes for each time point
+  time_spikes <- colSums(spks)
+
+  # Use par(mfrow = c(nrows, ncols)) to put multiple plots on the same page
+  par(mfrow = c(2, 1))
+
+  # Plot the sum of spikes for each neuron
+  barplot(neuron_spikes, main = paste("Neuron firing counts (Trial", trial, ")"), xlab = "Neuron", ylab = "Count of Spikes")
+
+  # Plot the sum of spikes at each time point
+  plot(time_spikes, type = "l", main = paste("Spike counts over time (Trial", trial, ")"), xlab = "Time point", ylab = "Count of Spikes")
+}
+```
